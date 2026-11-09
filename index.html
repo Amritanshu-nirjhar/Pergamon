@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pergamon — The Infinite Shelf</title>
+<meta name="description" content="Pergamon: a scroll-driven 3D library of 29 books that changed how we think — read the classics free, right in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Instrument+Sans:wdth,wght@75..100,400..600&family=JetBrains+Mono:wght@400;500&family=Bebas+Neue&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Space+Grotesk:wght@500;700&family=Unbounded:wght@900&family=Cormorant+Garamond:wght@500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+<a class="skip" href="#library" data-library>Skip to the library</a>
+<div id="warp" aria-hidden="true"><b></b></div>
+<div id="loader">
+  <div>
+    <p class="kicker">Pergamon · binding <span data-n></span> volumes</p>
+    <b>The infinite shelf</b>
+  </div>
+  <span id="ld" aria-hidden="true">00</span>
+  <div class="l-stack" aria-hidden="true"></div>
+  <i class="lbar"></i>
+</div>
+
+<canvas id="gl" aria-hidden="true"></canvas>
+<div id="bignum" aria-hidden="true"></div>
+<div class="bar"></div>
+<div id="cursor" aria-hidden="true"><span></span></div>
+<div id="dot" aria-hidden="true"></div>
+
+<header>
+  <a class="brand" href="#top" id="brand">Pergamon</a>
+  <span id="chap" class="mono"></span>
+  <span class="h-right"><button class="sound" id="soundBtn" aria-pressed="false" aria-label="Sound off — turn on"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="spk" d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="wave w1" d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path class="wave w2" d="M18 6.8a7.5 7.5 0 0 1 0 10.4"/><path class="mute" d="M16 9.5l5 5m0-5l-5 5"/></svg><span>Sound</span></button><button class="link" data-library>Library</button><span id="count" class="mono"></span></span>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="hero-in">
+      <p class="kicker">A library you scroll through · <span data-n></span> books in four rooms</p>
+      <h1>The <em>infinite</em><br>shelf.</h1>
+      <div class="hero-actions">
+        <button class="go" data-library><span>Go straight to the library</span><i>→</i></button>
+        <button class="link" data-tour>or take the tour ↓</button>
+      </div>
+      <p class="hero-note mono"><span data-pdall></span> classics free to read · <span data-libtotal></span> in the catalogue</p>
+    </div>
+    <p class="kicker cue">Scroll to begin</p>
+  </section>
+  <div id="rooms"></div>
+  <section class="biblio" id="library" aria-labelledby="bTitle">
+    <div class="b-wrap">
+      <p class="kicker">Pergamon · the great library</p>
+      <h2 class="b-title" id="bTitle">The great <em>library.</em></h2>
+      <div class="b-intro">
+        <p class="b-lede">Every book from the rooms above, and dozens more besides. <span data-pdall></span> of them are bound here in full — open one and read it right now, free.</p>
+        <dl class="b-stats">
+          <div><dt>Volumes</dt><dd data-count="books">0</dd></div>
+          <div><dt>Readable here</dt><dd data-count="readable">0</dd></div>
+          <div><dt>Words on the shelves</dt><dd data-count="words">0</dd></div>
+          <div><dt>Hours of reading</dt><dd data-count="hours">0</dd></div>
+        </dl>
+      </div>
+      <div class="b-continue" id="bContinue" hidden><p class="kicker">Continue reading</p><div class="b-cont-row"></div></div>
+      <div class="b-colwrap"><p class="kicker">Collections</p><div class="b-cols" id="bCols" role="group" aria-label="Collections"></div></div>
+      <div class="b-browse">
+      <div class="b-controls">
+        <div class="b-row b-top">
+          <label class="b-search"><span class="sr">Search the library</span><input id="bSearch" type="search" placeholder="Search titles, authors, genres…" autocomplete="off"></label>
+          <div class="seg" data-group="view" role="group" aria-label="View">
+            <button data-v="shelf">Shelf</button><button data-v="covers">Covers</button><button data-v="catalogue">Catalogue</button><button data-v="timeline">Timeline</button>
+          </div>
+          <button id="bFilterBtn" class="b-filter-btn" aria-expanded="false" aria-controls="bFilters">Filters <span id="bFilterN"></span></button>
+          <button id="bSurprise" class="b-surprise"><i aria-hidden="true">✦</i> Surprise me</button>
+        </div>
+        <div class="b-filters" id="bFilters" hidden>
+          <div class="b-row chips" data-group="avail" role="group" aria-label="Availability"></div>
+          <div class="b-row chips" data-group="kind" role="group" aria-label="Kind"></div>
+          <div class="b-row chips" data-group="era" role="group" aria-label="Era"></div>
+        </div>
+        <div class="b-row b-meta">
+          <span id="bCount" class="mono"></span>
+          <label class="b-sort mono">Sort by
+            <select id="bSort">
+              <option value="curated">Curator’s order</option><option value="title">Title</option><option value="author">Author</option>
+              <option value="oldest">Oldest first</option><option value="newest">Newest first</option><option value="shortest">Shortest read</option><option value="longest">Longest read</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <ul class="b-items" id="bItems"></ul>
+      <div class="tl-scrub" id="tlScrub" hidden><div class="tl-track"><i class="tl-thumb"></i></div><div class="tl-eras"></div></div>
+      <p class="b-empty" id="bEmpty" hidden>Nothing on these shelves matches. <button class="link" id="bReset">Clear the filters</button></p>
+      </div>
+      <footer class="b-foot">
+        <blockquote class="f-quote"><p>I have always imagined that Paradise will be a kind of library.</p><cite class="mono">Jorge Luis Borges</cite></blockquote>
+        <div class="f-continue" id="fContinue" hidden><p class="kicker">Pick up where you left off</p><div class="b-cont-row"></div></div>
+        <div class="f-end">
+          <h2>Fin<em>.</em></h2>
+          <div class="f-links"><button id="top" class="link">Back to the first page ↑</button><button class="link" id="fSurprise">✦ Surprise me</button></div>
+        </div>
+        <p class="mono b-credit">Public-domain texts courtesy of Project Gutenberg · borrowing via Open Library</p>
+      </footer>
+    </div>
+  </section>
+</main>
+
+<aside id="panel" aria-live="polite">
+  <p id="pNum" class="kicker"></p>
+  <h2 id="pTitle"></h2>
+  <p id="pAuthor"></p>
+  <dl class="facts">
+    <div><dt>Published</dt><dd id="fY"></dd></div>
+    <div><dt>Length</dt><dd id="fP"></dd></div>
+    <div><dt>Genre</dt><dd id="fG"></dd></div>
+  </dl>
+  <blockquote id="pQuote"></blockquote>
+  <div class="actions">
+    <button id="readBtn" class="go"><span></span><i>→</i></button>
+    <button id="openBtn" class="link">Open the book</button>
+  </div>
+</aside>
+<nav id="ticks" aria-label="Jump to a book"></nav>
+
+<div id="viewer" class="viewer" role="dialog" aria-modal="true" aria-labelledby="vTitle" hidden data-lenis-prevent>
+  <div class="v-stage">
+    <div class="v-shadow"></div>
+    <p class="v-hint mono">Drag across the pages to riffle</p>
+    <div class="v-fly"><div class="v-tilt"><div class="v-book">
+      <div class="v-back"></div><div class="v-spine"></div>
+      <i class="v-edge v-edge-r"></i><i class="v-edge v-edge-t"></i><i class="v-edge v-edge-b"></i>
+      <div class="v-page lines"></div>
+      <div class="v-cover"><div class="v-front"></div><div class="v-inside"></div></div>
+    </div></div></div>
+  </div>
+  <div class="v-info">
+    <button class="link v-close" data-vclose>← Back to the library</button>
+    <p class="kicker" id="vKick"></p>
+    <h2 id="vTitle"></h2>
+    <p class="v-author" id="vAuthor"></p>
+    <blockquote id="vQuote"></blockquote>
+    <dl class="v-facts" id="vFacts"></dl>
+    <div class="v-actions"><button class="go" id="vRead"><span>Start reading</span><i>→</i></button><button class="link" id="vShare">Copy link</button></div>
+  </div>
+</div>
+
+<div id="reader" class="overlay reader" role="dialog" aria-modal="true" aria-labelledby="rBook" hidden data-lenis-prevent>
+  <header class="r-bar">
+    <button class="link" data-close>← Shelf</button>
+    <p class="r-where"><em id="rBook"></em><span id="rChap" class="mono"></span><span id="rLeft" class="mono"></span></p>
+    <div class="r-tools">
+      <button id="rMark" class="r-mark" aria-pressed="false" aria-label="Bookmark this place"><svg viewBox="0 0 14 18" aria-hidden="true"><path d="M1 1h12v16l-6-4.5L1 17z"/></svg></button>
+      <button id="rTocBtn" class="link" aria-expanded="false" aria-controls="rToc">Contents</button>
+      <span class="r-aa-wrap">
+        <button id="rAa" class="r-aa" aria-expanded="false" aria-controls="rPrefs" aria-label="Reading settings">Aa</button>
+        <div id="rPrefs" class="r-prefs" role="dialog" aria-label="Reading settings" hidden>
+          <div class="r-row"><span class="mono">Layout</span>
+            <span class="r-mode" role="group" aria-label="Layout"><button data-mode="scroll">Scroll</button><button data-mode="pages">Pages</button></span></div>
+          <div class="r-row"><span class="mono">Size</span>
+            <span class="r-size"><button id="rSmaller" aria-label="Smaller text">−</button><output id="rSizeVal">20</output><button id="rBigger" aria-label="Larger text">+</button></span></div>
+          <div class="r-row"><span class="mono">Theme</span>
+            <span class="r-themes"><button data-theme-set="night"><i></i>Night</button><button data-theme-set="sepia"><i></i>Sepia</button><button data-theme-set="paper"><i></i>Paper</button></span></div>
+        </div>
+      </span>
+    </div>
+    <i class="r-progress"></i>
+  </header>
+  <nav id="rToc" class="r-toc" hidden aria-label="Contents, search and notes" data-lenis-prevent>
+    <div class="r-tabs" role="tablist"><button data-tab="toc" role="tab" aria-selected="true">Contents</button><button data-tab="search" role="tab" aria-selected="false">Search</button><button data-tab="marks" role="tab" aria-selected="false">Notes</button></div>
+    <div data-pane="toc" id="rTocList"></div>
+    <div data-pane="search" hidden>
+      <label class="r-find"><span class="sr">Search this book</span><input id="rFind" type="search" placeholder="Search this book…" autocomplete="off"></label>
+      <div id="rHits" class="r-hits"></div>
+    </div>
+    <div data-pane="marks" hidden>
+      <p class="kicker">Bookmarks</p><ol id="rBms" class="r-notes"></ol>
+      <p class="kicker">Highlights</p><ol id="rHls" class="r-notes"></ol>
+    </div>
+  </nav>
+  <button id="rHl" class="r-hl" hidden></button>
+  <section class="r-pages" aria-label="Pages">
+    <div class="r-spread" id="rSpread">
+      <div class="r-page slot"><div class="r-pc"></div><span class="r-pn mono"></span></div>
+      <div class="r-page slot"><div class="r-pc"></div><span class="r-pn mono"></span></div>
+      <div class="r-leaf" aria-hidden="true">
+        <div class="r-page r-face"><div class="r-pc"></div><span class="r-pn mono"></span></div>
+        <div class="r-page r-face back"><div class="r-pc"></div><span class="r-pn mono"></span></div>
+      </div>
+      <div class="r-page r-measure" id="rMeasure" aria-hidden="true"><div class="r-pc"></div></div>
+    </div>
+    <footer class="r-pstat">
+      <button class="link" data-chap="-1">← Chapter</button>
+      <span id="rPStat" class="mono"></span>
+      <button class="link" data-chap="1">Chapter →</button>
+    </footer>
+  </section>
+  <article id="rArticle" class="r-article">
+    <p class="kicker" id="rPart"></p>
+    <h2 id="rHead"></h2>
+    <p class="r-sub" id="rSub"></p>
+    <div id="rText" class="r-text"></div>
+    <footer class="r-nav">
+      <button id="rPrev" class="link">← Previous</button>
+      <span id="rPos" class="mono"></span>
+      <button id="rNext" class="link">Next chapter →</button>
+    </footer>
+    <p class="r-credit mono">Public-domain text courtesy of <a id="rSrc" target="_blank" rel="noopener">Project Gutenberg ↗</a></p>
+  </article>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
