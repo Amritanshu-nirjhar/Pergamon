@@ -1,2 +1,9 @@
 node_modules
 dist
+
+# secrets: keep API keys in .env.local, never commit them
+.env
+.env.*
+!.env.example
+*.pem
+*.key
