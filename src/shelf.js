@@ -314,6 +314,7 @@ export async function createShelf({reader, lenis, reduce, sfx, onViewer, onState
     setFilters(qs) {
       const p = new URLSearchParams(qs);
       for (const k of Object.keys(DEF)) if (p.has(k)) state[k] = p.get(k);
+      state.q = state.q.toLowerCase(); // typed searches are lowercased too
       if (state.col && !COLLECTIONS.some(c => c.id === state.col)) state.col = '';
       if (!['shelf', 'covers', 'catalogue', 'timeline'].includes(p.get('view'))) p.delete('view');
       syncControls();

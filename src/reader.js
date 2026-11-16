@@ -16,16 +16,19 @@ const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const plain = s => s.replace(/_/g, '');
 
-// Wrap the first case-insensitive occurrence of `text` inside `root` in a <mark>, even across <em> boundaries.
-function markText(root, text, cls, id) {
+// Wrap `text` inside `root` in a <mark>, even across <em> boundaries. With `at` (character offset in the whole
+// paragraph) the exact passage is marked, clipped to this fragment if a page break splits the paragraph
+// (`data-o` is where the fragment starts); without it, the first case-insensitive match.
+function markText(root, text, cls, id, at) {
   const nodes = [], walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let all = '';
+  let all = '', s, e;
   while (walk.nextNode()) { nodes.push([walk.currentNode, all.length]); all += walk.currentNode.data }
-  const at = all.toLowerCase().indexOf(text.toLowerCase());
-  if (at < 0 || !text) return null;
+  if (!text) return null;
+  if (at == null) { s = all.toLowerCase().indexOf(text.toLowerCase()); e = s + text.length; if (s < 0) return null }
+  else { const o = at - (+root.dataset.o || 0); s = Math.max(0, o); e = Math.min(all.length, o + text.length); if (s >= e) return null }
   const find = pos => { for (let k = nodes.length - 1; k >= 0; k--) if (nodes[k][1] <= pos) return [nodes[k][0], pos - nodes[k][1]] };
   const r = document.createRange();
-  r.setStart(...find(at)); r.setEnd(...find(at + text.length));
+  r.setStart(...find(s)); r.setEnd(...find(e));
   const m = document.createElement('mark');
   m.className = cls;
   if (id) m.dataset.h = id;
@@ -36,11 +39,13 @@ function markText(root, text, cls, id) {
 export function createReader({onToggle, onTurn, onChapter}) {
   const reader = $('#reader'), text = $('#rText'), toc = $('#rToc'), bar = reader.querySelector('.r-bar');
   const spread = $('#rSpread'), [L, R] = spread.querySelectorAll('.slot'), leaf = spread.querySelector('.r-leaf');
-  const [front, back] = leaf.querySelectorAll('.r-face'), measure = $('#rMeasure .r-pc'), hlBtn = $('#rHl');
+  const measure = $('#rMeasure .r-pc'), hlBtn = $('#rHl');
   let book, data, ch = 0, saveT, isOpen = false, total = 0;
   let pages = [], paraPage = [], pg = 0, per = 1, turning = null;
 
-  const prefs = {size: 20, theme: 'night', mode: 'scroll', ...store.get('prefs', {})};
+  // v2: turning pages became the default; earlier visitors were saved on scroll by default, so move them over once
+  const saved = store.get('prefs', {});
+  const prefs = {size: 20, theme: 'night', ...saved, mode: saved.v === 2 ? saved.mode : 'pages', v: 2};
   const paged = () => prefs.mode === 'pages';
   const applyPrefs = () => {
     reader.dataset.theme = prefs.theme;
@@ -63,8 +68,10 @@ export function createReader({onToggle, onTurn, onChapter}) {
     place({y});
   }
 
+  let returnTo;
   function show() {
     if (isOpen) return;
+    returnTo = document.activeElement;
     isOpen = true; reader.hidden = false; onToggle(true);
     gsap.fromTo(reader, {clipPath: 'inset(100% 0 0 0)'}, {clipPath: 'inset(0% 0 0 0)', duration: .9, ease: 'expo.inOut'});
     reader.querySelector('[data-close]').focus({preventScroll: true});
@@ -72,12 +79,12 @@ export function createReader({onToggle, onTurn, onChapter}) {
   function hide() {
     isOpen = false;
     toggleToc(false); togglePrefs(false); hlBtn.hidden = true;
-    gsap.to(reader, {clipPath: 'inset(0 0 100% 0)', duration: .7, ease: 'expo.inOut', onComplete: () => { reader.hidden = true; onToggle(false) }});
+    gsap.to(reader, {clipPath: 'inset(0 0 100% 0)', duration: .7, ease: 'expo.inOut', onComplete: () => { reader.hidden = true; onToggle(false); returnTo?.focus?.({preventScroll: true}) }});
   }
 
   // ---------- rendering ----------
   const label = k => { const c = data.chapters[k]; return `${c.part ? c.part + ' · ' : ''}${c.t}` };
-  const para = (i, t, cls = '') => `<p data-i="${i}"${cls ? ` class="${cls.trim()}"` : ''}>${inline(t)}</p>`;
+  const para = (i, t, cls = '', o = 0) => `<p data-i="${i}"${o ? ` data-o="${o}"` : ''}${cls ? ` class="${cls.trim()}"` : ''}>${inline(t)}</p>`;
   const pcClass = () => 'r-pc r-text' + (data.verse ? ' verse' : '');
 
   function render(k, pos = {y: 0}) {
@@ -154,11 +161,11 @@ export function createReader({onToggle, onTurn, onChapter}) {
     measure.innerHTML = cur;
     const flush = () => { pages.push(cur); measure.innerHTML = cur = '' };
     c.p.forEach((p, i) => {
-      let toks = p.split(' '), cont = false;
+      let toks = p.split(' '), cont = false, off = 0; // off: where this fragment starts in the paragraph's text
       paraPage[i] = pages.length;
       while (toks.length) {
         const cls = (cont ? ' pc-cont' : '') + (i === 0 && !cont && !data.verse ? ' dc' : '');
-        const html = (n, cut) => para(i, toks.slice(0, n).join(' '), cls + (cut ? ' pc-cut' : ''));
+        const html = (n, cut) => para(i, toks.slice(0, n).join(' '), cls + (cut ? ' pc-cut' : ''), off);
         measure.insertAdjacentHTML('beforeend', html(toks.length));
         if (!over()) { cur += html(toks.length); break }
         measure.lastChild.remove();
@@ -175,6 +182,7 @@ export function createReader({onToggle, onTurn, onChapter}) {
         // an italic run cut by the page break is closed here and reopened on the next page
         if ((toks.slice(0, n).join(' ').match(/_/g) || []).length % 2) { toks[n - 1] += '_'; toks[n] = '_' + toks[n] }
         cur += html(n, true); flush();
+        off += plain(toks.slice(0, n).join(' ')).length + 1;
         toks = toks.slice(n); cont = true;
       }
     });
@@ -192,8 +200,103 @@ export function createReader({onToggle, onTurn, onChapter}) {
     fill(L, pg);
     if (per === 2) fill(R, pg + 1);
   }
+  // ---------- the turning leaf ----------
+  // A page turns like paper: a corner lifts and folds back along a line, the back of the sheet shows on the flap,
+  // and the page underneath appears beyond the fold. Everything is worked out in the sheet's own coordinates
+  // (x from the spine outward, 0..W; y down, 0..H) from one point: P, where the lifted corner is now.
+  // P starts on the corner C; a full turn carries it to the mirror point (-W, C.y), on the far side of the spine.
+  leaf.innerHTML = `<div class="r-under"></div>
+    <div class="r-page r-face"><div class="r-pc"></div><span class="r-pn mono"></span></div>
+    <div class="r-flap"><div class="r-page r-face back"><div class="r-pc"></div><span class="r-pn mono"></span></div></div>
+    <div class="r-flap-shade"></div>`;
+  const [under, front, flapBox, flapShade] = leaf.children, flapFace = flapBox.firstElementChild;
+  const poly = pts => pts.length > 2 ? `polygon(${pts.map(([x, y]) => `${x.toFixed(1)}px ${y.toFixed(1)}px`).join(',')})` : 'polygon(0 0)';
+  // keep the part of a convex polygon where f(point) >= 0 (one Sutherland–Hodgman pass)
+  const cut = (pts, f) => pts.flatMap((a, i) => {
+    const b = pts[(i + 1) % pts.length], fa = f(a), fb = f(b), out = fa >= 0 ? [a] : [];
+    if ((fa >= 0) !== (fb >= 0)) { const u = fa / (fa - fb); out.push([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]) }
+    return out;
+  });
+  let flip = null;
+  function draw(P) {
+    const f = flip, {C, W, H} = f;
+    // the sheet is bound at the spine, so the corner can only travel so far without tearing
+    for (const [sy, r] of [[C.y, W], [H - C.y, Math.hypot(W, H)]]) {
+      const dx = P.x, dy = P.y - sy, d = Math.hypot(dx, dy);
+      if (d > r) P = {x: dx * r / d, y: sy + dy * r / d};
+    }
+    f.P = P;
+    const t = f.t = clamp((W - P.x) / (2 * W), 0, 1), lx = C.x - P.x, ly = C.y - P.y, len = Math.hypot(lx, ly);
+    if (per === 1) leaf.style.opacity = clamp(1 - (t - .5) * 2, 0, 1); // a single page lifts away rather than landing
+    if (len < .5) { front.style.clipPath = ''; under.style.clipPath = flapShade.style.clipPath = 'polygon(0 0)'; flapBox.style.display = 'none'; return }
+    flapBox.style.display = '';
+    // fold line: the perpendicular bisector of C and P, i.e. points X with X·n = c; the corner side is X·n > c
+    const nx = lx / len, ny = ly / len, c = ((C.x + P.x) * nx + (C.y + P.y) * ny) / 2;
+    const rect = [[0, 0], [W, 0], [W, H], [0, H]];
+    const lying = cut(rect, ([x, y]) => c - x * nx - y * ny), lifted = cut(rect, ([x, y]) => x * nx + y * ny - c);
+    const mirror = ([x, y]) => { const d = 2 * (x * nx + y * ny - c); return [x - d * nx, y - d * ny] };
+    front.style.clipPath = poly(lying);
+    under.style.clipPath = poly(lifted);
+    flapShade.style.clipPath = poly(lifted.map(mirror).map(([x, y]) => [x + W, y])); // this layer spans both pages: x from -W
+    // the back face: mirror the sheet (its back reads the other way), then reflect it across the fold
+    const a = -(1 - 2 * nx * nx), b = 2 * nx * ny, cc = -2 * nx * ny, d = 1 - 2 * ny * ny;
+    const e = W * (1 - 2 * nx * nx) + 2 * c * nx, g = -2 * W * nx * ny + 2 * c * ny;
+    flapFace.style.transform = `matrix(${a},${b},${cc},${d},${e},${g})`;
+    flapFace.style.clipPath = poly(lifted.map(([x, y]) => [W - x, y]));
+    // light and shade, measured from the fold: a soft shadow on the page being uncovered, and the flap
+    // dark at its crease with a sheen where the paper rolls over
+    // CSS gradient in a box starting at x = ox, bw wide, running along (sx, sy), with stops measured from the fold
+    const w = clamp(len * .3, 6, 90);
+    const grad = (sx, sy, k, ox, bw, stops) => {
+      const at = k - ((ox + bw / 2) * sx + H / 2 * sy) + (Math.abs(bw * sx) + Math.abs(H * sy)) / 2;
+      return `linear-gradient(${Math.atan2(sx, -sy) * 180 / Math.PI}deg, ${stops.map(([o, col]) => `${col} ${(at + o).toFixed(1)}px`).join(', ')})`;
+    };
+    under.style.background = grad(nx, ny, c, 0, W, [[0, 'rgba(0,0,0,.5)'], [w * .3, 'rgba(0,0,0,.2)'], [w, 'rgba(0,0,0,0)']]);
+    flapShade.style.background = grad(-nx, -ny, -c, -W, 2 * W, [[0, 'rgba(0,0,0,.32)'], [w * .22, 'rgba(255,255,255,.09)'], [w * .55, 'rgba(0,0,0,.05)'], [w * 1.3, 'rgba(0,0,0,0)']]);
+    leaf.style.setProperty('--lift', Math.min(1, len / (W * .6)).toFixed(3));
+  }
+  // load the leaf with the outgoing page on its front and the incoming one on its back, and swap in the pages
+  // it uncovers; the page it lands on is swapped after. A backward turn is a forward one played in reverse.
+  // Null when the turn would leave the chapter.
+  function prep(dir, top = false) {
+    const to = pg + dir * per;
+    if (to < 0 || to >= pages.length) return null;
+    hlBtn.hidden = true;
+    let land = null;
+    if (dir > 0 && per === 2) { fill(front, pg + 1); fill(flapFace, pg + 2); fill(R, pg + 3); land = L }
+    else if (dir > 0) { fill(front, pg); fill(flapFace, -1); fill(L, pg + 1) }
+    else if (per === 2) { fill(front, pg - 1); fill(flapFace, pg); fill(L, pg - 2); land = R }
+    else { fill(front, pg - 1); fill(flapFace, -1); land = L }
+    const W = L.offsetWidth, H = L.offsetHeight, C = {x: W, y: top ? 0 : H};
+    leaf.style.left = per === 2 ? '50%' : '0%';
+    leaf.style.opacity = 1;
+    leaf.style.display = 'block';
+    flip = {dir, to, land, W, H, C, home: dir > 0 ? C : {x: -W, y: C.y}, away: dir > 0 ? {x: -W, y: C.y} : C};
+    draw(flip.home);
+    return flip;
+  }
+  // carry the corner to the far side (commit) or back home; it rises a little on the way, as a real page does
+  function settle(commit, ease = 'power2.out') {
+    const f = flip, P0 = f.P, P1 = commit ? f.away : f.home, o = {e: 0};
+    const lift = f.H * .1 * Math.abs(P1.x - P0.x) / (2 * f.W) * (f.C.y ? -1 : 1);
+    turning = gsap.to(o, {
+      e: 1, duration: .35 + .65 * Math.abs(P1.x - P0.x) / (2 * f.W), ease,
+      onUpdate: () => draw({x: P0.x + (P1.x - P0.x) * o.e, y: P0.y + (P1.y - P0.y) * o.e + lift * Math.sin(Math.PI * o.e)}),
+      onComplete() {
+        if (commit) { pg = f.to; if (f.land) fill(f.land, f.land === L ? pg : pg + 1) } else showSpread();
+        leaf.style.display = 'none';
+        flip = turning = null;
+        progress();
+      },
+    });
+  }
   function turn(dir) {
-    if (!data) return;
+    if (flip?.peek) { // a corner is already peeking: finish that turn, or drop it and turn the other way
+      turning?.kill(); turning = null; flip.peek = false;
+      if (flip.dir === dir) { onTurn?.(); return settle(true, 'power2.inOut') }
+      settle(false);
+    }
+    if (!data || (flip && !turning)) return; // a page is in the reader's hand
     turning?.progress(1);
     hlBtn.hidden = true;
     const to = pg + dir * per;
@@ -201,47 +304,88 @@ export function createReader({onToggle, onTurn, onChapter}) {
     if (to >= pages.length) return ch < data.chapters.length - 1 && render(ch + 1);
     onTurn?.();
     if (reduce) { pg = to; showSpread(); progress(); return }
-    // the leaf carries the outgoing page on its front and the incoming one on its back;
-    // the pages it uncovers are swapped in underneath before it moves, the ones it lands on after
-    let from = 0, end, origin = '0% 50%', left = '0%', land;
-    if (dir > 0 && per === 2) { fill(front, pg + 1); fill(back, pg + 2); fill(R, pg + 3); left = '50%'; end = -180; land = L }
-    else if (dir > 0) { fill(front, pg); fill(back, -1); fill(L, pg + 1); end = -180 }
-    else if (per === 2) { fill(front, pg); fill(back, pg - 1); fill(L, pg - 2); origin = '100% 50%'; end = 180; land = R }
-    else { fill(front, pg - 1); fill(back, -1); from = -180; end = 0; land = L }
-    gsap.set(leaf, {display: 'block', left, transformOrigin: origin, rotateY: from, opacity: 1});
-    turning = gsap.to(leaf, {
-      rotateY: end, duration: .95, ease: 'power2.inOut',
-      onUpdate() {
-        const a = Math.abs(gsap.getProperty(leaf, 'rotateY')) / 180, s = Math.sin(a * Math.PI);
-        spread.style.setProperty('--s', s.toFixed(3));
-        if (per === 1) leaf.style.opacity = clamp(1 - (a - .5) * 2, 0, 1); // a single page lifts away rather than landing
-      },
-      onComplete() {
-        pg = to;
-        if (land) fill(land, land === L ? pg : pg + 1);
-        gsap.set(leaf, {display: 'none'});
-        spread.style.setProperty('--s', 0);
-        turning = null;
-        progress();
-      },
-    });
+    prep(dir); settle(true, 'power2.inOut');
   }
-  // click or tap the right half to go forward, left half to go back; swipe on touch
-  let down;
-  spread.addEventListener('pointerdown', e => down = e);
-  spread.addEventListener('pointerup', e => {
-    if (!down || e.target.closest('mark.hl, a, button')) return;
-    const dx = e.clientX - down.clientX;
-    if (e.pointerType === 'touch' && Math.abs(dx) > 40) return turn(dx < 0 ? 1 : -1);
-    if (Math.abs(dx) > 6 || !getSelection().isCollapsed) return;
-    const r = spread.getBoundingClientRect();
-    turn(e.clientX > r.left + r.width / 2 ? 1 : -1);
+
+  // Click or tap either half to turn. Hover near an outer corner and it peels up to meet the pointer; grab it
+  // (or, on touch, swipe anywhere) and it follows. Let go a quarter of the way over and it turns, else it falls back.
+  let down = null;
+  const local = (e, f) => { const r = leaf.getBoundingClientRect(), s = f.W / r.width || 1; return {x: (e.clientX - r.left) * s, y: (e.clientY - r.top) * s} };
+  // is the pointer on a page's outer edge? {dir, top, tip: right at a corner} or null
+  const corner = e => {
+    const r = spread.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, z = Math.min(90, r.width * .12);
+    const top = y < r.height / 2, tip = y < z || y > r.height - z;
+    if (x > r.width - z) return {dir: 1, top, tip};
+    if (x < z && per === 2) return {dir: -1, top, tip};
+    return null;
+  };
+  spread.addEventListener('pointerdown', e => {
+    if (e.button || !data || e.target.closest('mark.hl, a, button')) return;
+    const mouse = e.pointerType === 'mouse';
+    if (flip?.peek) { // pick up the corner that's already lifted
+      e.preventDefault(); turning?.kill(); turning = null; flip.peek = false;
+      spread.setPointerCapture(e.pointerId); spread.style.cursor = 'grabbing'; onTurn?.();
+      down = {x: e.clientX, y: e.clientY, P0: flip.P, drag: true, grab: true, dir: flip.dir};
+      return;
+    }
+    turning?.progress(1);
+    const k = mouse ? corner(e) : null, r = spread.getBoundingClientRect();
+    down = {x: e.clientX, y: e.clientY, r, dir: k?.dir ?? 0, top: k ? k.top : e.clientY - r.top < r.height / 2, grab: !mouse || !!k, drag: false};
+    if (k) e.preventDefault(); // holding a page, not selecting text
   });
+  spread.addEventListener('pointermove', e => {
+    if (!down) { if (e.pointerType === 'mouse') hover(e); return }
+    if (!down.grab) return;
+    const dx = e.clientX - down.x, dy = e.clientY - down.y;
+    if (!down.drag) {
+      if (Math.hypot(dx, dy) < 8) return;
+      down.drag = true;
+      down.dir ||= dx < 0 ? 1 : -1;
+      spread.setPointerCapture(e.pointerId);
+      spread.style.cursor = 'grabbing';
+      if (reduce || !prep(down.dir, down.top)) return; // at a chapter's edge (or no motion): handled on release
+      down.P0 = flip.P;
+      onTurn?.();
+    }
+    if (!flip) return;
+    const s = flip.W / leaf.getBoundingClientRect().width || 1;
+    draw({x: down.P0.x + dx * s, y: down.P0.y + dy * s});
+  });
+  function hover(e) {
+    const edge = !reduce && data && paged() && (!flip || flip.peek) ? corner(e) : null, k = edge?.tip ? edge : null;
+    spread.style.cursor = edge ? 'grab' : '';
+    if (k && flip?.peek && (flip.dir !== k.dir || !flip.C.y !== k.top)) { turning?.kill(); turning = null; flip.peek = false; settle(false) }
+    if (k && !flip && prep(k.dir, k.top)) flip.peek = true;
+    if (k && flip?.peek) {
+      // the corner rises to meet the pointer, but only a little: a peek, not a turn
+      const P = local(e, flip), H = flip.home, d = Math.hypot(P.x - H.x, P.y - H.y), m = Math.min(d, 70) / (d || 1);
+      const goal = {x: H.x + (P.x - H.x) * m + (flip.dir > 0 ? -42 : 42), y: H.y + (P.y - H.y) * m + (flip.C.y ? -34 : 34)};
+      turning?.kill();
+      const o = {...flip.P};
+      turning = gsap.to(o, {x: goal.x, y: goal.y, duration: .35, ease: 'power3.out', onUpdate: () => draw({...o})});
+    } else if (flip?.peek) { turning?.kill(); turning = null; flip.peek = false; settle(false) }
+  }
+  spread.addEventListener('pointerleave', () => { if (!down && flip?.peek) { turning?.kill(); turning = null; flip.peek = false; settle(false) } });
+  spread.addEventListener('pointerup', e => {
+    const d = down, dx = e.clientX - (d?.x ?? 0), moved = Math.hypot(dx, e.clientY - (d?.y ?? 0));
+    down = null;
+    if (!d) return;
+    if (d.drag) {
+      spread.style.cursor = '';
+      // a click on a peeking corner turns it; otherwise it turns once it's a quarter of the way over
+      if (flip) settle(moved < 6 || (flip.dir > 0 ? flip.t > .25 : flip.t < .75), moved < 6 ? 'power2.inOut' : 'power2.out');
+      else if (Math.abs(dx) > 60) turn(d.dir);
+      return;
+    }
+    if (Math.abs(dx) > 6 || !getSelection().isCollapsed) return;
+    turn(d.dir || (e.clientX > d.r.left + d.r.width / 2 ? 1 : -1));
+  });
+  spread.addEventListener('pointercancel', () => { if (down?.drag && flip && !turning) settle(false); down = null });
 
   // ---------- highlights ----------
   const hls = () => store.get('hl:' + book.pg, []);
   function decorate(root) {
-    for (const h of hls()) if (h.ch === ch) root.querySelectorAll(`p[data-i="${h.i}"]`).forEach(p => markText(p, h.text, 'hl', h.id));
+    for (const h of hls()) if (h.ch === ch) root.querySelectorAll(`p[data-i="${h.i}"]`).forEach(p => markText(p, h.text, 'hl', h.id, h.at));
   }
   let pending;
   const pin = (r, label, mode) => {
@@ -256,7 +400,11 @@ export function createReader({onToggle, onTurn, onChapter}) {
       const node = n => n && (n.nodeType === 3 ? n.parentElement : n).closest('p[data-i]');
       const p = !sel.isCollapsed && node(sel.anchorNode);
       if (!p || p !== node(sel.focusNode) || !reader.contains(p)) return hlBtn.hidden = true;
-      pending = {ch, i: +p.dataset.i, text: sel.toString().trim(), id: String(Date.now())};
+      // remember where in the paragraph the selection starts, so a repeated phrase marks the one chosen
+      const range = sel.getRangeAt(0), before = document.createRange(), raw = range.toString();
+      before.selectNodeContents(p); before.setEnd(range.startContainer, range.startOffset);
+      const at = (+p.dataset.o || 0) + before.toString().length + raw.length - raw.trimStart().length;
+      pending = {ch, i: +p.dataset.i, text: raw.trim(), at, id: String(Date.now())};
       if (pending.text.length > 1) pin(sel.getRangeAt(0).getBoundingClientRect(), 'Highlight', 'add');
     });
   });
@@ -265,11 +413,12 @@ export function createReader({onToggle, onTurn, onChapter}) {
     const list = hls();
     if (hlBtn.dataset.mode === 'add') {
       list.push(pending);
-      reader.querySelectorAll(`.r-text p[data-i="${pending.i}"]`).forEach(p => markText(p, pending.text, 'hl', pending.id));
+      reader.querySelectorAll(`.r-text p[data-i="${pending.i}"]`).forEach(p => markText(p, pending.text, 'hl', pending.id, pending.at));
       getSelection().removeAllRanges();
       toast('Highlighted');
     } else {
-      list.splice(list.findIndex(h => h.id === pending), 1);
+      const at = list.findIndex(h => h.id === pending);
+      if (at >= 0) list.splice(at, 1);
       reader.querySelectorAll(`mark.hl[data-h="${pending}"]`).forEach(m => m.replaceWith(...m.childNodes));
       toast('Highlight removed');
     }
@@ -333,12 +482,16 @@ export function createReader({onToggle, onTurn, onChapter}) {
     $('#rFind').value = ''; $('#rHits').innerHTML = '';
     show();
     data = null;
+    let d;
     try {
-      data = await (await fetch(`${import.meta.env.BASE_URL}books/${b.pg}.json`)).json();
+      d = await (await fetch(`${import.meta.env.BASE_URL}books/${b.pg}.json`)).json();
     } catch {
+      if (book !== b) return;
       text.innerHTML = L.querySelector('.r-pc').innerHTML = `<p class="r-loading">Couldn’t load this book. <a href="https://www.gutenberg.org/ebooks/${b.pg}" target="_blank" rel="noopener">Read it on Project Gutenberg ↗</a></p>`;
       return;
     }
+    if (book !== b) return; // another book was opened while this one loaded
+    data = d;
     $('#rSrc').href = data.src;
     $('#rTocList').innerHTML = '<ol>' + data.chapters.map((c, i) =>
       `<li><button data-ch="${i}">${c.part && (i === 0 || data.chapters[i - 1].part !== c.part) ? `<span class="kicker">${esc(c.part)}</span>` : ''}${esc(c.t)}${c.s ? ` <em>${esc(c.s)}</em>` : ''}</button></li>`).join('') + '</ol>';

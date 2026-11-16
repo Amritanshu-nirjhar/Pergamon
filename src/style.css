@@ -443,7 +443,7 @@ h1 em { font-weight: 400 }
 }
 .r-spread {
   --per: 2; position: relative; display: grid; grid-template-columns: repeat(var(--per), minmax(0, 1fr));
-  width: min(100%, calc(var(--per) * 36rem)); height: min(100%, 64rem); align-self: center; perspective: 2600px; touch-action: pan-y;
+  width: min(100%, calc(var(--per) * 36rem)); height: min(100%, 64rem); align-self: center; perspective: 4200px; touch-action: pan-y;
   box-shadow: 0 40px 70px -30px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .12)
 }
 .r-page {
@@ -476,14 +476,12 @@ h1 em { font-weight: 400 }
 /* the gutter: pages darken softly toward the spine */
 .r-spread:not(.single) .slot:first-child, .r-spread:not(.single) .r-face.back { --gutter: linear-gradient(to left, rgba(0, 0, 0, .3), rgba(0, 0, 0, .1) 3%, rgba(0, 0, 0, .03) 9%, transparent 16%) }
 .r-spread:not(.single) .slot:nth-child(2), .r-spread:not(.single) .r-leaf .r-face:not(.back) { --gutter: linear-gradient(to right, rgba(0, 0, 0, .3), rgba(0, 0, 0, .1) 3%, rgba(0, 0, 0, .03) 9%, transparent 16%) }
-/* the uncovered page sits in the leaf's shadow while it is in the air */
-.slot::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(90deg, rgba(0, 0, 0, .28), transparent 60%); opacity: calc(var(--s, 0) * .7) }
-.slot:first-child::after { transform: scaleX(-1) }
-.r-leaf { position: absolute; top: 0; bottom: 0; width: calc(100% / var(--per)); display: none; transform-style: preserve-3d; z-index: 2; will-change: transform }
-.r-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; box-shadow: 0 0 30px rgba(0, 0, 0, calc(var(--s, 0) * .35)) }
-.r-face.back { transform: rotateY(180deg) }
-/* light rakes across the curling paper */
-.r-face::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: var(--s, 0); background: linear-gradient(90deg, rgba(0, 0, 0, .22), rgba(255, 255, 255, .07) 45%, rgba(0, 0, 0, .12)) }
+/* the turning page (geometry in reader.js): the sheet still lying flat, its folded-back flap, and the shading */
+.r-leaf { position: absolute; top: 0; bottom: 0; width: calc(100% / var(--per)); display: none; z-index: 2; pointer-events: none }
+.r-leaf > .r-face, .r-under { position: absolute; inset: 0 }
+.r-flap { position: absolute; inset: 0; filter: drop-shadow(0 0 calc(4px + var(--lift, 0) * 14px) rgba(0, 0, 0, calc(.15 + var(--lift, 0) * .35))) }
+.r-flap .r-face { position: absolute; inset: 0; transform-origin: 0 0 }
+.r-flap-shade { position: absolute; top: 0; bottom: 0; left: -100%; width: 200% }
 .r-measure { position: absolute; top: 0; left: 0; bottom: 0; width: calc(100% / var(--per)); visibility: hidden; pointer-events: none }
 .r-phead { text-align: center; margin-bottom: 2.2em }
 .r-phead h2 { font: 400 clamp(1.9rem, 3vw, 2.7rem)/1.06 var(--display); letter-spacing: -.02em; margin: 10px 0 0; text-wrap: balance }

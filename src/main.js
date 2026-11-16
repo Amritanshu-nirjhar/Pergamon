@@ -87,9 +87,12 @@ const scene = await createScene($('#gl'), n => {
 let paused = false, shelf;
 const inLibrary = () => lenis.scroll > libEl.offsetTop - vh() * .5;
 const setHash = h => history.replaceState(null, '', h || location.pathname + location.search);
+// while the reader or the book viewer is open, everything behind it is out of reach of Tab and screen readers
+const setInert = v => document.querySelectorAll('.skip, body > header, main, #panel, #ticks').forEach(el => el.inert = v);
 const reader = createReader({
   onToggle: open => {
     paused = open;
+    setInert(open);
     root.classList.toggle('locked', open);
     open ? lenis.stop() : lenis.start();
     if (!open) { shelf?.refresh(); setHash(inLibrary() ? '#/library' : '') }
@@ -97,10 +100,10 @@ const reader = createReader({
   onTurn: () => sfx.rustle(.6),
   onChapter: (b, ch) => setHash(`#/read/${slug(b)}/${ch + 1}`),
 });
-window.__reader = reader;
 shelf = await createShelf({
   reader, lenis, reduce, sfx,
   onViewer: (open, toReader) => {
+    setInert(open || toReader);
     root.classList.toggle('locked', open || toReader);
     open || toReader ? lenis.stop() : lenis.start();
   },
